@@ -1,0 +1,9 @@
+# 美国：州(ADM1) -> 城市(PPL/PPLA/PPLA2 全量) -> 城市下级(PPLX)
+# county(ADM2) 不物化；PPL 全量收录，不按人口过滤（地址选择器需完整城市集合）
+country: US
+province: [ADM1]
+city: [PPL, PPLA, PPLA2]
+district: [PPLX]
+allow_missing_district: true
+self_level_fallback: true
+parent_resolution: [hierarchy, admin_code]

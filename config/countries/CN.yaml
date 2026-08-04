@@ -1,0 +1,11 @@
+# 中国：省(ADM1) -> 市(ADM2) -> 区县(ADM3)；直辖市经虚拟节点处理
+country: CN
+province: [ADM1]
+city: [ADM2]
+district: [ADM3]
+exclude: [ADM4, ADM5]
+# 直辖市 admin1 codes（GeoNames 使用 FIPS 10-4 编码）：北京 22、上海 23、天津 28、重庆 33
+# 规则：直辖市 ADM1 生成虚拟 level2 节点（is_virtual=1，引用同一 geoname_id），其 ADM2 区县归为 level3
+municipalities: ["22", "23", "28", "33"]
+self_level_fallback: true
+parent_resolution: [hierarchy, admin_code]

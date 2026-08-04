@@ -1,0 +1,5 @@
+# 质量阈值（阶段一基线；diff 对比在阶段二启用）
+max_record_drop_pct: 10.0
+min_level1_nodes: 1
+min_level2_nodes: 1
+coverage_warn_drop_pct: 5.0

@@ -1,0 +1,11 @@
+# 日本：都道府县(ADM1) -> 市区町村与特别区(ADM2/PPLA2) -> 政令指定都市的区(ADM3/PPLX)
+# 渋谷区等特别区 = level2；无 ADM3 下级的城市由 self_level_fallback 生成自身虚拟 level3
+country: JP
+province: [ADM1]
+city: [ADM2, PPLA2]
+district: [ADM3, PPLX]
+# JP 数据中同城实体可能同时以 ADM2 与 PPLA/PPLA2 出现（不同 geoname_id），
+# 按 (admin1, 名称) 去重，保留 ADM2（权重更高）
+dedupe_level2_by_name: true
+self_level_fallback: true
+parent_resolution: [hierarchy, admin_code]

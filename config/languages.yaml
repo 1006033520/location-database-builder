@@ -1,0 +1,11 @@
+# Application language tags -> GeoNames alternate-name source language tags.
+# Phase 1 scope: zh-Hans / ja / en (+ local fallback, always present).
+languages:
+  # GeoNames 常把中文名标为 wuu(吴语)/yue(粤语) 而非 zh，均为中文书写变体，
+  # 纳入 zh-Hans 候选源以提升中文覆盖率；nan/hak 含罗马拼音转写，不入候选
+  zh-Hans: [zh, zh-CN, zh-Hans, wuu, yue]
+  en: [en, en-US, en-GB]
+  ja: [ja]
+
+# GeoNames alternateNames isolanguage tags that carry no linguistic value.
+excluded_tags: [link, wk, wikipedia, iata, icao, post, abbr, unlc, geonames, iso639-3]
