@@ -4,9 +4,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sqlite3
 import sys
 
-from . import __version__
+from . import __version__, packager
 from .builder import build_countries_index, build_country, load_golden
 from .config import PROJECT_ROOT, VersionsConfig
 from .downloader import download_all
@@ -116,12 +117,38 @@ def _collect_reports(countries: list[str]) -> list[dict]:
 
 
 def cmd_manifest(args) -> int:
-    """FIX-007: emit manifest.json (+ manifest.sig when signing)."""
+    """FIX-007: emit manifest.json (+ manifest.sig when signing).
+
+    Version consistency: catalog/schema/mapping versions are taken from the
+    per-country build reports (i.e. exactly what was written into the SQLite
+    metadata), never re-read from config — the manifest and the databases
+    cannot diverge. An explicit --catalog-version that disagrees with the
+    built databases is an error, not a silent override.
+    """
     countries = _parse_country(args.country)
     reports = _collect_reports(countries)
     with open(os.path.join(BUILD_DIR, "countries_report.json"), "r", encoding="utf-8") as f:
         index_report = json.load(f)
-    versions = _versions(args)
+    versions = VersionsConfig(
+        catalog_version=reports[0]["metadata"]["catalog_version"],
+        mapping_version=reports[0]["metadata"]["mapping_version"],
+        schema_version=reports[0]["metadata"]["schema_version"],
+    )
+    for r in reports[1:]:
+        md = r["metadata"]
+        if (md["catalog_version"], md["mapping_version"], md["schema_version"]) != (
+            versions.catalog_version,
+            versions.mapping_version,
+            versions.schema_version,
+        ):
+            print("ERROR: inconsistent versions across country reports")
+            for rr in reports:
+                print(f"  {rr['country']}: catalog={rr['metadata']['catalog_version']} "
+                      f"mapping={rr['metadata']['mapping_version']} schema={rr['metadata']['schema_version']}")
+            return 1
+    if getattr(args, "catalog_version", None) and args.catalog_version != versions.catalog_version:
+        print(f"ERROR: --catalog-version {args.catalog_version} != built catalog {versions.catalog_version}")
+        return 1
     source_date = max(r["metadata"]["source_date"] for r in reports)
     m = manifest_mod.build_manifest(BUILD_DIR, versions, reports, index_report, source_date)
     out = os.path.join(BUILD_DIR, "manifest.json")
@@ -131,6 +158,8 @@ def cmd_manifest(args) -> int:
     print(f"  catalog={m['catalogVersion']} schema={m['schemaVersion']} mapping={m['mappingVersion']} sourceDate={m['sourceDate']}")
     for a in m["attachments"]:
         print(f"  {a['name']}: {a['compressedSize']}B -> {a['size']}B sha256={a['sha256'][:16]}...")
+    for cc, info in m["countries"].items():
+        print(f"  {cc}: units={info['units']} names={info['names']} levels={info['levels']}")
     if args.sign or args.verify:
         key = manifest_mod.load_private_key(args.key_file)
         sig = manifest_mod.sign(m, key)
@@ -143,6 +172,84 @@ def cmd_manifest(args) -> int:
             print(f"self-verify: {'OK' if ok else 'FAILED'}")
             return 0 if ok else 1
     return 0
+
+
+def cmd_verify_release(args) -> int:
+    """Release-level consistency gate (run in CI before publishing):
+
+    1. every manifest attachment hash matches the built file;
+    2. manifest.sig verifies with the committed public key;
+    3. every country SQLite (decompressed) carries the SAME catalog/schema/
+       mapping versions as the manifest;
+    4. manifest per-country levels match the actual non-empty levels in each
+       SQLite.
+    """
+    import gzip
+    import tempfile
+
+    m_path = os.path.join(BUILD_DIR, "manifest.json")
+    if not os.path.exists(m_path):
+        print(f"no manifest at {m_path}; run 'manifest' first")
+        return 1
+    with open(m_path, "r", encoding="utf-8") as f:
+        m = json.load(f)
+    rc = 0
+
+    def fail(msg: str) -> None:
+        nonlocal rc
+        print(f"  FAIL: {msg}")
+        rc = 1
+
+    # 1. attachment hashes
+    print("verify-release: attachment hashes")
+    for a in m["attachments"]:
+        p = os.path.join(BUILD_DIR, a["name"])
+        if not os.path.exists(p):
+            fail(f"missing attachment {a['name']}")
+            continue
+        h = packager.sha256_hex(p)
+        if h != a["sha256"]:
+            fail(f"hash mismatch {a['name']}: manifest {a['sha256'][:16]}... file {h[:16]}...")
+        else:
+            print(f"  OK {a['name']}")
+
+    # 2. signature
+    s_path = os.path.join(BUILD_DIR, "manifest.sig")
+    if os.path.exists(s_path):
+        with open(s_path, "rb") as f:
+            sig = f.read()
+        pub = os.path.join(PROJECT_ROOT, "signing_pub.pem")
+        if os.path.exists(pub) and manifest_mod.verify(m, sig, manifest_mod.load_public_key(pub)):
+            print("  OK manifest.sig (Ed25519, committed public key)")
+        else:
+            fail("manifest.sig does not verify")
+
+    # 3+4. per-country SQLite metadata + levels
+    print("verify-release: SQLite metadata vs manifest")
+    with tempfile.TemporaryDirectory() as tmp:
+        for cc, info in m["countries"].items():
+            gz = os.path.join(BUILD_DIR, f"{cc}.sqlite.gz")
+            db = os.path.join(tmp, f"{cc}.sqlite")
+            with gzip.open(gz, "rb") as fin, open(db, "wb") as fout:
+                import shutil
+
+                shutil.copyfileobj(fin, fout)
+            conn = sqlite3.connect(db)
+            meta = dict(conn.execute("SELECT key, value FROM metadata"))
+            levels = [r[0] for r in conn.execute(
+                "SELECT normalized_level FROM administrative_units GROUP BY normalized_level"
+            )]
+            conn.close()
+            if meta.get("catalog_version") != m["catalogVersion"]:
+                fail(f"{cc} catalog_version {meta.get('catalog_version')!r} != manifest {m['catalogVersion']!r}")
+            if meta.get("schema_version") != m["schemaVersion"]:
+                fail(f"{cc} schema_version mismatch")
+            if meta.get("mapping_version") != m["mappingVersion"]:
+                fail(f"{cc} mapping_version mismatch")
+            if sorted(levels) != info["levels"]:
+                fail(f"{cc} levels {sorted(levels)} != manifest {info['levels']}")
+            print(f"  OK {cc}: catalog={meta.get('catalog_version')} levels={sorted(levels)}")
+    return rc
 
 
 def cmd_sign(args) -> int:
@@ -222,6 +329,9 @@ def main(argv: list[str] | None = None) -> int:
     p_ver = sub.add_parser("verify", help="FIX-007: verify manifest.sig")
     p_ver.add_argument("--key-file", help="PEM public key path (else SIGNING_PUBKEY env)")
     p_ver.set_defaults(func=cmd_verify)
+
+    p_rel = sub.add_parser("verify-release", help="release gate: manifest vs built SQLite consistency")
+    p_rel.set_defaults(func=cmd_verify_release)
 
     p_key = sub.add_parser("genkey", help="FIX-007: generate an Ed25519 keypair")
     p_key.add_argument("--pub", default="signing_pub.pem")

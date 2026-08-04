@@ -252,11 +252,13 @@ class TestManifest(unittest.TestCase):
             reports = [{
                 "country": "CN",
                 "sha256": {"gz": "a" * 64},
-                "stats": {"nodes": 5, "by_level": {0: 1, 1: 1, 2: 1, 3: 2}},
+                "stats": {"nodes": 5, "by_level": {0: 1, 1: 1, 2: 1, 3: 2, 4: 0}},
                 "metadata": {"name_count": "9"},
             }]
             index_report = {"sha256": {"gz": "b" * 64}}
             manifest = build_manifest(build, versions, reports, index_report, "2026-08-05")
+            # levels must only contain levels with actual nodes (no phantom 4)
+            self.assertEqual(manifest["countries"]["CN"]["levels"], [0, 1, 2, 3])
             key = m.load_private_key(priv)
             sig = m.sign(manifest, key)
             self.assertTrue(m.verify(manifest, sig, key.public_key()))

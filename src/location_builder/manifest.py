@@ -86,7 +86,8 @@ def build_manifest(build_dir: str, versions, reports: list[dict], index_report: 
         countries[report["country"]] = {
             "units": report["stats"]["nodes"],
             "names": report["metadata"]["name_count"],
-            "levels": sorted(int(k) for k in report["stats"]["by_level"] if int(k) > 0 or int(k) == 0),
+            # FIX: only levels with actual nodes (by_level includes 4:0 entries)
+            "levels": sorted(int(k) for k, v in report["stats"]["by_level"].items() if v > 0),
         }
     return {
         "catalogVersion": versions.catalog_version,

@@ -71,8 +71,9 @@ tests/          单元 + 集成测试（黄金样本 fixtures/golden.json）
 
 ## 关键设计（与需求文档确认的决策）
 
-1. **缺级兜底**：国家整体缺某级 → 配置声明（如 US `allow_missing_district`），客户端跳级；
-   个别城市缺级 → 生成 `is_virtual=1` 虚拟节点引用城市自身（渋谷区 → 渋谷区）。
+1. **缺级兜底（按国家配置）**：`allow_missing_district` 表示单个城市允许没有区县，
+   城市自然结束在 city 层（US：Los Angeles）；`self_level_fallback` 支持按层级开关
+   （JP：city 开、district 关，渋谷区 → 结束在区，不生成“渋谷区 → 渋谷区”）。
 2. **中国直辖市**：北京/上海/天津/重庆（GeoNames FIPS admin1 码 22/23/28/33）生成虚拟
    level2 节点，区县归 level3（北京市 → 北京市 → 朝阳区）。
 3. **稳定 ID**：真实 = geoname_id；虚拟 = `2^62 | sha256(cc|level|parent|gid) % 2^62`，
@@ -90,16 +91,17 @@ tests/          单元 + 集成测试（黄金样本 fixtures/golden.json）
 | 父级下子项查询 | <100ms | 0.03–5.2ms |
 | 名称前缀搜索 | <200ms | 0.15–18.7ms |
 | CN 压缩包 | 0.2–1.2MB | 0.5MB |
-| JP 压缩包 | 0.2–1.2MB | 1.5MB |
-| US 压缩包 | 1–10MB（目标） | 41.7MB（全量城市 + 缺级自虚拟的诚实代价） |
+| JP 压缩包 | 0.2–1.2MB | 0.6MB |
+| US 压缩包 | 1–10MB（目标） | 17.4MB（全量 16.8 万城市，真实 PPLX 区县） |
 
-US 包体超出目标的原因：全量收录 16.8 万城市（产品决策，不做人口过滤）+ 16.6 万个
-缺级自虚拟节点。可选优化：人口过滤、US 缺级跳过而非自虚拟、减少别名数量 —— 待决策。
+US 包体仍超目标：全量收录 16.8 万城市（产品决策，不做人口过滤）。移动端建议**按州分页、
+搜索或懒加载**，不要一次加载全部城市；可选优化：人口过滤、城市合并、别名裁剪（阶段二）。
 
 ## 已知数据限制
 
 - 美国「New York City → Brooklyn」：GeoNames 将 Brooklyn 建模为与 NYC 平级的城市
-  （PPLA2），并非 NYC 下级，黄金样本按软性处理。
+  （PPLA2），故 Brooklyn 作为 city 挂在本州（New York）下，NYC 的区县层为真实 PPLX
+  （如 Greenwich Village）。
 - CN 英文名覆盖率 14%、JP 英文名覆盖率 7%：GeoNames 东亚数据的 en 别名稀疏，
   客户端回退链（请求语言 → local → en → default）可兜底。
 

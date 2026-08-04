@@ -36,6 +36,9 @@ jobs:
       - name: Verify manifest with committed public key
         run: |
           PYTHONPATH=src python3 -m location_builder.cli verify --key-file signing_pub.pem
+      - name: Release consistency gate (manifest vs SQLite metadata/levels/hashes)
+        run: |
+          PYTHONPATH=src python3 -m location_builder.cli verify-release
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
