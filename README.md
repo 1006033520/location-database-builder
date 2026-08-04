@@ -25,7 +25,22 @@ PYTHONPATH=src python3 -m location_builder.cli validate --country CN
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-依赖：Python 3.11+、PyYAML（仅此一个第三方包）。
+依赖：Python 3.11+、PyYAML、opencc-python-reimplemented（简繁转换）、cryptography（签名）。
+
+## 发布产物与签名验证
+
+```bash
+# 生成 manifest + Ed25519 签名（私钥经 SIGNING_KEY 环境变量或 Actions Secret 注入）
+SIGNING_KEY="$(cat signing_priv.pem)" PYTHONPATH=src python3 -m location_builder.cli manifest ALL --sign --verify
+
+# 客户端验证签名（公钥已提交在仓库根目录 signing_pub.pem）
+PYTHONPATH=src python3 -m location_builder.cli verify --key-file signing_pub.pem
+```
+
+Release 附件：`manifest.json`、`manifest.sig`、`countries.sqlite.gz`、
+`CN.sqlite.gz`、`JP.sqlite.gz`、`US.sqlite.gz`、`ATTRIBUTION.txt`、`LICENSE-CC-BY-4.0.txt`。
+
+详见 `FIX_REPORT.md`（阶段一修复记录）与 `.github/workflows/publish.yml`。
 
 ## 输出产物
 

@@ -1,0 +1,48 @@
+name: publish
+
+# FIX-007: build CN/JP/US from real GeoNames data, write + sign the manifest
+# (Ed25519 private key from the REPO_SIGNING_KEY secret) and create a GitHub
+# Release with all client-consumable assets. Triggered on `v*` tags or
+# manually. Re-running for an existing tag fails loudly instead of clobbering
+# the previous release.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install pyyaml opencc-python-reimplemented cryptography
+      - name: Download real GeoNames source data
+        run: PYTHONPATH=src python3 -m location_builder.cli download
+      - name: Build CN/JP/US + countries index
+        run: |
+          PYTHONPATH=src python3 -m location_builder.cli build ALL --index \
+            --catalog-version "${GITHUB_REF_NAME#v}"
+      - name: Write + sign manifest
+        env:
+          SIGNING_KEY: ${{ secrets.REPO_SIGNING_KEY }}
+        run: |
+          PYTHONPATH=src python3 -m location_builder.cli manifest ALL --sign --verify
+      - name: Verify manifest with committed public key
+        run: |
+          PYTHONPATH=src python3 -m location_builder.cli verify --key-file signing_pub.pem
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            build/manifest.json build/manifest.sig \
+            build/countries.sqlite.gz build/CN.sqlite.gz build/JP.sqlite.gz build/US.sqlite.gz \
+            ATTRIBUTION.txt LICENSE-CC-BY-4.0.txt \
+            --title "v${GITHUB_REF_NAME#v} — GeoNames catalog (CN/JP/US)" \
+            --notes "Signed catalog build. See manifest.json for per-artifact SHA-256; verify manifest.sig with signing_pub.pem (Ed25519)."

@@ -242,6 +242,27 @@ class Normalizer:
                 return None
             return max(cands, key=lambda c: (c.population, c.geoname_id))
 
+        def admin_parent(n: Node) -> Node | None:
+            """Admin-code based parent lookup (states for level 2, city/state for
+            level 3). Used as the hierarchy fallback when the hierarchy edge
+            points to a same-or-higher level node (e.g. US boroughs whose
+            hierarchy parent is the city itself)."""
+            su = n.source_unit
+            if su is None:
+                return None
+            if n.level == 1:
+                return root
+            if n.level == 2:
+                return pick(l1_by_a1.get(su.admin1, []))
+            if n.level == 3:
+                p = pick(l2_by_a12.get((su.admin1, su.admin2), []))
+                if p is None and su.admin1 in muni_twins:
+                    p = muni_twins[su.admin1]
+                if p is None:
+                    p = pick(l1_by_a1.get(su.admin1, []))
+                return p
+            return None
+
         for n in nodes:
             if n.level == 0 or n.is_virtual:
                 # root keeps no parent; virtual nodes keep the parent set at creation time
@@ -258,20 +279,11 @@ class Normalizer:
                         break
             # (b) admin-code matching
             if parent is None and su:
-                if n.level == 1:
-                    parent = root
-                elif n.level == 2:
-                    # parent is always a level-1 node (states/provinces/prefectures)
-                    parent = pick(l1_by_a1.get(su.admin1, []))
-                elif n.level == 3:
-                    # parent is a level-2 node sharing admin1+admin2 (city), or
-                    # a municipality virtual twin, or a level-1 node
-                    parent = pick(l2_by_a12.get((su.admin1, su.admin2), []))
-                    if parent is None and su.admin1 in muni_twins:
-                        parent = muni_twins[su.admin1]
-                    if parent is None:
-                        parent = pick(l1_by_a1.get(su.admin1, []))
-            # (c) final guard: parent level must be strictly lower
+                parent = admin_parent(n)
+            # (c) final guard: hierarchy edge to a same/higher level node falls
+            # back to admin-code matching instead of the root.
+            if parent is not None and parent.level >= n.level:
+                parent = admin_parent(n)
             if parent is None:
                 parent = root
             if parent.level >= n.level:
@@ -279,11 +291,17 @@ class Normalizer:
             n.parent_id = parent.id
 
     def _missing_level_fallback(self, nodes: list[Node]) -> None:
-        cfg = self.cfg
-        real_level3 = [n for n in nodes if n.level == 3 and not n.is_virtual]
-        skip_l3 = cfg.allow_missing_district and not real_level3
+        """FIX-002/003: per-target-level self fallback.
 
-        # children index: parent_id -> set of child ids (built once, O(n))
+        - level1 -> level2: controlled by `self_level_fallback.city`.
+        - level2 -> level3: controlled by `self_level_fallback.district` AND
+          `allow_missing_district`. `allow_missing_district=true` now means a
+          single city may simply *end* at city level (no same-name virtual
+          district is created); it is not a country-wide toggle.
+        """
+        cfg = self.cfg
+
+        # children index: parent_id -> list of child nodes (built once, O(n))
         children: dict[int, list[Node]] = {}
         for n in nodes:
             if n.parent_id is not None:
@@ -293,14 +311,14 @@ class Normalizer:
             return any(c.level == level for c in children.get(parent_id, []))
 
         # level1 -> level2 fallback (省即市)
-        l1s = [n for n in nodes if n.level == 1]
-        for l1 in l1s:
-            if not has_child(l1.id, 2):
-                nodes.append(self._self_virtual(nodes, l1, 2))
-        # level2 -> level3 fallback (市即区县), skipped if country declares whole level missing
-        if not skip_l3:
-            l2s = [n for n in nodes if n.level == 2]
-            for l2 in l2s:
+        if cfg.fallback_for("city"):
+            for l1 in [n for n in nodes if n.level == 1]:
+                if not has_child(l1.id, 2):
+                    nodes.append(self._self_virtual(nodes, l1, 2))
+        # level2 -> level3 fallback (市即区县). FIX-003: when
+        # allow_missing_district=true the city keeps no district children at all.
+        if cfg.fallback_for("district") and not cfg.allow_missing_district:
+            for l2 in [n for n in nodes if n.level == 2]:
                 if not has_child(l2.id, 3):
                     nodes.append(self._self_virtual(nodes, l2, 3))
 

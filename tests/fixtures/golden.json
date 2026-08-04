@@ -1,18 +1,48 @@
 {
-  "CN": [
-    {"path": ["中国", "北京市", "北京市", "朝阳区"], "lang": "zh-Hans", "required": true},
-    {"path": ["中国", "安徽省", "六安市", "金安区"], "lang": "zh-Hans", "required": true},
-    {"path": ["中国", "安徽省", "合肥市", "蜀山区"], "lang": "zh-Hans", "required": false},
-    {"path": ["China", "Anhui", "Lu'an City", "Jin'an District"], "lang": "en", "required": false}
-  ],
-  "JP": [
-    {"path": ["日本", "東京都", "渋谷区"], "lang": "ja", "required": true},
-    {"path": ["日本", "東京都", "渋谷区", "渋谷区"], "lang": "ja", "required": false},
-    {"path": ["Japan", "Tokyo", "Shibuya"], "lang": "en", "required": false}
-  ],
-  "US": [
-    {"path": ["United States", "California", "Los Angeles"], "lang": "en", "required": true},
-    {"path": ["United States", "New York", "New York City", "Brooklyn"], "lang": "en", "required": false},
-    {"path": ["美国", "加利福尼亚州", "洛杉矶"], "lang": "zh-Hans", "required": false}
-  ]
+  "CN": {
+    "requiredPaths": [
+      {"path": ["中国", "北京市", "北京市", "朝阳区"], "lang": "zh-Hans"},
+      {"path": ["中国", "安徽省", "六安市", "金安区"], "lang": "zh-Hans"},
+      {"path": ["中国", "安徽省", "合肥市", "蜀山区"], "lang": "zh-Hans"},
+      {"path": ["China", "Anhui", "Lu'an City", "Jin'an District"], "lang": "en"}
+    ],
+    "forbiddenPaths": [],
+    "maxVirtualByLevel": {"2": 10, "3": 50},
+    "forbiddenNamesByLevel": {},
+    "expectedFeatureCodesByLevel": {"1": ["ADM1"], "2": ["ADM2"], "3": ["ADM3", "ADM2"]}
+  },
+  "JP": {
+    "requiredPaths": [
+      {"path": ["日本", "東京都", "渋谷区"], "lang": "ja"},
+      {"path": ["Japan", "Tokyo", "Shibuya"], "lang": "en"}
+    ],
+    "forbiddenPaths": [
+      {"path": ["日本", "東京都", "渋谷区", "渋谷区"], "lang": "ja"},
+      {"path": ["日本", "東京都", "渋谷区", "笹塚"], "lang": "ja"},
+      {"path": ["日本", "東京都", "渋谷区", "幡ヶ谷"], "lang": "ja"}
+    ],
+    "maxVirtualByLevel": {"2": 10, "3": 0},
+    "forbiddenNamesByLevel": {"3": ["笹塚", "幡ヶ谷", "松濤", "代々木", "恵比寿"]},
+    "expectedFeatureCodesByLevel": {"1": ["ADM1"], "2": ["ADM2", "PPLA2"], "3": ["ADM3"]}
+  },
+  "US": {
+    "requiredPaths": [
+      {"path": ["United States", "California", "Los Angeles"], "lang": "en"},
+      {"path": ["United States", "New York", "New York City", "Greenwich Village"], "lang": "en"},
+      {"path": ["United States", "New York", "Brooklyn"], "lang": "en"}
+    ],
+    "forbiddenPaths": [
+      {"path": ["United States", "California", "Los Angeles", "Los Angeles"], "lang": "en"}
+    ],
+    "maxVirtualByLevel": {"2": 0, "3": 0},
+    "forbiddenNamesByLevel": {},
+    "expectedFeatureCodesByLevel": {"1": ["ADM1"], "2": ["PPL", "PPLA", "PPLA2"], "3": ["PPLX"]}
+  },
+  "COUNTRIES": {
+    "requiredNames": {
+      "CN": {"zh-Hans": "中国", "en": "China", "ja": "中国", "local": "中国"},
+      "JP": {"zh-Hans": "日本", "en": "Japan", "ja": "日本", "local": "日本"},
+      "US": {"zh-Hans": "美国", "en": "United States", "ja": "アメリカ", "local": "United States"}
+    }
+  }
 }

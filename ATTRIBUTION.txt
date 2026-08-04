@@ -1,0 +1,18 @@
+ATTRIBUTION
+
+Contains information from GeoNames (https://www.geonames.org/), licensed
+under Creative Commons Attribution 4.0 International (CC BY 4.0).
+
+The database packages in this release (CN.sqlite.gz, JP.sqlite.gz,
+US.sqlite.gz, countries.sqlite.gz) are derived works of GeoNames
+gazetteer data. The data has been filtered, normalized, localized
+(simplified Chinese conversion via OpenCC) and converted to SQLite for
+offline administrative-area selection.
+
+- Source: https://download.geonames.org/export/dump/
+- License: https://creativecommons.org/licenses/by/4.0/ (full text in
+  LICENSE-CC-BY-4.0.txt)
+- Source data date: see sourceDate in manifest.json (per
+  download.geonames.org HTTP Last-Modified)
+
+Builder source code in src/ is licensed separately (see LICENSE).

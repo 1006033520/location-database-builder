@@ -23,13 +23,23 @@ class CountryConfig:
     exclude: list[str] = field(default_factory=list)
     municipalities: list[str] = field(default_factory=list)
     allow_missing_district: bool = False
-    self_level_fallback: bool = True
+    # bool True  -> fallback at every level (legacy behavior)
+    # bool False -> no self fallback at any level
+    # dict       -> per-level switch: {"city": bool, "district": bool}
+    self_level_fallback: bool | dict = True
     dedupe_level2_by_name: bool = False
     parent_resolution: list[str] = field(default_factory=lambda: ["hierarchy", "admin_code"])
 
     @property
     def candidate_codes(self) -> set[str]:
         return set(self.province) | set(self.city) | set(self.district)
+
+    def fallback_for(self, level: str) -> bool:
+        """FIX-003: per-target-level self fallback control.
+        level is 'city' (level 2) or 'district' (level 3)."""
+        if isinstance(self.self_level_fallback, dict):
+            return bool(self.self_level_fallback.get(level, False))
+        return bool(self.self_level_fallback)
 
     @classmethod
     def load(cls, country_code: str) -> "CountryConfig":
@@ -47,6 +57,23 @@ class LanguagesConfig:
     @classmethod
     def load(cls) -> "LanguagesConfig":
         return cls(**_load(os.path.join(PROJECT_ROOT, "config", "languages.yaml")))
+
+
+@dataclass
+class VersionsConfig:
+    """FIX-011: version information is injected from config / CLI / release tag,
+    never hardcoded in builder code."""
+
+    catalog_version: str = "0.0.0-dev"
+    mapping_version: str = "0.0.0-dev"
+    schema_version: str = "1"
+
+    @classmethod
+    def load(cls) -> "VersionsConfig":
+        path = os.path.join(PROJECT_ROOT, "config", "versions.yaml")
+        if not os.path.exists(path):
+            return cls()
+        return cls(**{k: v for k, v in _load(path).items() if k in cls.__dataclass_fields__})
 
 
 @dataclass

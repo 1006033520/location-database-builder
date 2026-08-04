@@ -1,0 +1,5 @@
+# FIX-011: 版本信息统一在此配置，由 CLI 参数 / CI Release 标签覆盖注入，
+# 不再散落硬编码在 builder 代码中。所有国家包、国家索引与 manifest 共用。
+catalog_version: 2026.08.0
+mapping_version: "1.0.0"
+schema_version: "1"

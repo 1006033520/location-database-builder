@@ -6,7 +6,10 @@ on:
   pull_request:
 
 jobs:
-  test:
+  unit-and-fixture:
+    # FIX-006: PR jobs run unit tests + the no-network fixture end-to-end /
+    # manifest / download-cache tests. Nothing here can silently "pass" by
+    # skipping: these test classes do not depend on the GeoNames cache.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,12 +17,31 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install deps
-        run: pip install pyyaml
+        run: pip install pyyaml opencc-python-reimplemented cryptography
       - name: Unit tests
         run: python3 -m unittest discover -s tests/unit -v
-      - name: Integration test (requires source cache)
+      - name: Fixture e2e + manifest + cache tests (no network)
         run: |
-          python3 -m location_builder.cli download 2>/dev/null || true
-          python3 -m unittest discover -s tests/integration -v
-        env:
-          PYTHONPATH: src
+          PYTHONPATH=src python3 -m unittest \
+            tests.integration.test_build.TestFixtureE2E \
+            tests.integration.test_build.TestManifest \
+            tests.integration.test_build.TestDownloadCache -v
+
+  e2e-real-data:
+    # FIX-006: real GeoNames data is downloaded on main pushes (no `|| true` —
+    # a failed download fails the job). The full integration suite runs
+    # against the real cache; the TestEndToEnd class is skipped loudly when
+    # the cache is missing, and a download failure aborts before that.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install pyyaml opencc-python-reimplemented cryptography
+      - name: Download real GeoNames source data
+        run: PYTHONPATH=src python3 -m location_builder.cli download
+      - name: Full integration suite (real data)
+        run: PYTHONPATH=src python3 -m unittest discover -s tests/integration -v

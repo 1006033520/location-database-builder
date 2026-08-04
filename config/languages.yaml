@@ -1,9 +1,10 @@
 # Application language tags -> GeoNames alternate-name source language tags.
 # Phase 1 scope: zh-Hans / ja / en (+ local fallback, always present).
 languages:
-  # GeoNames 常把中文名标为 wuu(吴语)/yue(粤语) 而非 zh，均为中文书写变体，
-  # 纳入 zh-Hans 候选源以提升中文覆盖率；nan/hak 含罗马拼音转写，不入候选
-  zh-Hans: [zh, zh-CN, zh-Hans, wuu, yue]
+  # FIX-005: zh-Hans 候选源按优先级 zh-Hans > zh-CN > zh > wuu/yue 选择 preferred
+  #（优先级在 names.py ZH_SOURCE_PRIORITY 中实现）；wuu/yue 仅作补覆盖来源，
+  # 且必须经 OpenCC 简繁转换后才可成为首选名。
+  zh-Hans: [zh-Hans, zh-CN, zh, wuu, yue]
   en: [en, en-US, en-GB]
   ja: [ja]
 

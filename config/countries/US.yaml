@@ -1,9 +1,14 @@
-# 美国：州(ADM1) -> 城市(PPL/PPLA/PPLA2 全量) -> 城市下级(PPLX)
-# county(ADM2) 不物化；PPL 全量收录，不按人口过滤（地址选择器需完整城市集合）
+# 美国：州(ADM1) -> 城市(PPL/PPLA/PPLA2 全量) -> 真实城市下级(PPLX，如纽约各区)
+# FIX-003: county(ADM2) 不物化（独立产品决策，本轮不做）；
+# allow_missing_district=true 表示单个城市允许没有 district —— 无 PPLX 下级的
+# 城市（如 Los Angeles）直接结束在 level2，不再生成同名虚拟 district；
+# city/district 两级 self fallback 全部关闭，虚拟节点趋近于 0。
 country: US
 province: [ADM1]
 city: [PPL, PPLA, PPLA2]
 district: [PPLX]
 allow_missing_district: true
-self_level_fallback: true
+self_level_fallback:
+  city: false
+  district: false
 parent_resolution: [hierarchy, admin_code]

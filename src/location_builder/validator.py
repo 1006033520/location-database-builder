@@ -1,4 +1,4 @@
-"""Structural validation, language coverage and golden-sample checks."""
+"""Structural validation, language coverage, semantic golden checks."""
 from __future__ import annotations
 
 import sqlite3
@@ -64,7 +64,16 @@ def validate_structure(db_path: str, expected_country: str) -> list[str]:
         if dup:
             problems.append(f"{len(dup)} (unit, language) pairs with duplicate preferred names")
 
-        # no duplicate exact names in names table (PK should prevent, but double check)
+        # FIX-004: every administrative unit must have exactly one local
+        # preferred name (client fallback query depends on it).
+        missing_local = conn.execute(
+            "SELECT COUNT(*) FROM administrative_units u"
+            " WHERE NOT EXISTS (SELECT 1 FROM administrative_unit_names n"
+            "  WHERE n.unit_id = u.id AND n.language_tag = 'local' AND n.is_preferred = 1)"
+        ).fetchone()[0]
+        if missing_local:
+            problems.append(f"{missing_local} units without a preferred local name")
+
         # reachability: every node reachable from root
         total = conn.execute("SELECT COUNT(*) FROM administrative_units").fetchone()[0]
         reach = conn.execute(
@@ -81,27 +90,9 @@ def validate_structure(db_path: str, expected_country: str) -> list[str]:
     return problems
 
 
-def coverage_report(db_path: str) -> dict:
-    conn = sqlite3.connect(db_path)
-    try:
-        total = conn.execute("SELECT COUNT(*) FROM administrative_units").fetchone()[0]
-        langs = [r[0] for r in conn.execute(
-            "SELECT DISTINCT language_tag FROM administrative_unit_names ORDER BY language_tag"
-        )]
-        out = {"total_units": total, "languages": {}}
-        for lang in langs:
-            covered = conn.execute(
-                "SELECT COUNT(DISTINCT unit_id) FROM administrative_unit_names WHERE language_tag = ? AND is_preferred = 1",
-                (lang,),
-            ).fetchone()[0]
-            out["languages"][lang] = {
-                "covered": covered,
-                "coverage_pct": round(covered * 100.0 / total, 2) if total else 0.0,
-            }
-        return out
-    finally:
-        conn.close()
-
+# ---------------------------------------------------------------------------
+# FIX-010 semantic checks
+# ---------------------------------------------------------------------------
 
 def check_path(db_path: str, path: list[str], lang: str) -> bool:
     """Golden check: walk the tree by name in the given language
@@ -132,5 +123,95 @@ def check_path(db_path: str, path: list[str], lang: str) -> bool:
                 return False
             parent_id = row[0]
         return True
+    finally:
+        conn.close()
+
+
+def check_path_absent(db_path: str, path: list[str], lang: str) -> bool:
+    """FIX-010: assert that a path does NOT exist (forbidden paths)."""
+    return not check_path(db_path, path, lang)
+
+
+def check_max_virtual_by_level(db_path: str, caps: dict) -> list[str]:
+    """FIX-010: virtual node count per level must not exceed the cap."""
+    problems: list[str] = []
+    conn = sqlite3.connect(db_path)
+    try:
+        for level_str, cap in (caps or {}).items():
+            level = int(level_str)
+            n = conn.execute(
+                "SELECT COUNT(*) FROM administrative_units WHERE normalized_level = ? AND is_virtual = 1",
+                (level,),
+            ).fetchone()[0]
+            if n > int(cap):
+                problems.append(f"virtual level {level} count {n} exceeds cap {cap}")
+    finally:
+        conn.close()
+    return problems
+
+
+def check_forbidden_names_by_level(db_path: str, forbidden: dict) -> list[str]:
+    """FIX-010: no unit at a level may have a default_name in the forbidden list."""
+    problems: list[str] = []
+    conn = sqlite3.connect(db_path)
+    try:
+        for level_str, names in (forbidden or {}).items():
+            level = int(level_str)
+            if not names:
+                continue
+            qmarks = ",".join("?" * len(names))
+            rows = conn.execute(
+                f"SELECT default_name FROM administrative_units"
+                f" WHERE normalized_level = ? AND default_name IN ({qmarks})",
+                (level, *names),
+            ).fetchall()
+            for (name,) in rows:
+                problems.append(f"forbidden name at level {level}: {name!r}")
+    finally:
+        conn.close()
+    return problems
+
+
+def check_expected_feature_codes(db_path: str, expected: dict) -> list[str]:
+    """FIX-010: real (non-virtual) units at a level may only carry the expected
+    GeoNames feature codes."""
+    problems: list[str] = []
+    conn = sqlite3.connect(db_path)
+    try:
+        for level_str, codes in (expected or {}).items():
+            level = int(level_str)
+            if not codes:
+                continue
+            qmarks = ",".join("?" * len(codes))
+            rows = conn.execute(
+                f"SELECT DISTINCT source_feature_code FROM administrative_units"
+                f" WHERE normalized_level = ? AND is_virtual = 0 AND source_feature_code NOT IN ({qmarks})",
+                (level, *codes),
+            ).fetchall()
+            for (code,) in rows:
+                problems.append(f"unexpected feature code at level {level}: {code!r}")
+    finally:
+        conn.close()
+    return problems
+
+
+def coverage_report(db_path: str) -> dict:
+    conn = sqlite3.connect(db_path)
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM administrative_units").fetchone()[0]
+        langs = [r[0] for r in conn.execute(
+            "SELECT DISTINCT language_tag FROM administrative_unit_names ORDER BY language_tag"
+        )]
+        out = {"total_units": total, "languages": {}}
+        for lang in langs:
+            covered = conn.execute(
+                "SELECT COUNT(DISTINCT unit_id) FROM administrative_unit_names WHERE language_tag = ? AND is_preferred = 1",
+                (lang,),
+            ).fetchone()[0]
+            out["languages"][lang] = {
+                "covered": covered,
+                "coverage_pct": round(covered * 100.0 / total, 2) if total else 0.0,
+            }
+        return out
     finally:
         conn.close()

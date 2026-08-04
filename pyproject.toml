@@ -3,7 +3,11 @@ name = "location-builder"
 version = "0.1.0"
 description = "GeoNames multi-language administrative division database builder"
 requires-python = ">=3.11"
-dependencies = ["PyYAML>=6.0"]
+dependencies = [
+  "PyYAML>=6.0",
+  "opencc-python-reimplemented>=0.1.7",
+  "cryptography>=38.0",
+]
 
 [project.scripts]
 location-builder = "location_builder.cli:main"
