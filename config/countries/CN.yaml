@@ -5,7 +5,12 @@ city: [ADM2]
 district: [ADM3]
 exclude: [ADM4, ADM5]
 # 直辖市 admin1 codes（GeoNames 使用 FIPS 10-4 编码）：北京 22、上海 23、天津 28、重庆 33
-# 规则：直辖市 ADM1 生成虚拟 level2 节点（is_virtual=1，引用同一 geoname_id），其 ADM2 区县归为 level3
+# 规则：直辖市 ADM1 生成虚拟 level2 节点（is_virtual=1，引用同一 geoname_id），
+# 其 ADM2（城市整体）直接剔除（与省级重复），ADM3 区县归为 level3。
 municipalities: ["22", "23", "28", "33"]
+# 无 ADM3 子级的市（如东莞、中山等直筒子市）直接结束在市层，不再生成同名虚拟区
+allow_missing_district: true
+# 剔除与同省 ADM2 重复的 ADM3 双记录（益阳/常德/龙岩/衡水/眉山/资阳/陵水等）
+dedupe_cross_level: true
 self_level_fallback: true
 parent_resolution: [hierarchy, admin_code]

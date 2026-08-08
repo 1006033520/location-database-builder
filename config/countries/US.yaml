@@ -8,6 +8,11 @@ province: [ADM1]
 city: [PPL, PPLA, PPLA2]
 district: [PPLX]
 allow_missing_district: true
+# 同县同名双记录（PPLA2 vs PPL）去重，保留 PPLA2
+# 例：SC.047 下 Greenwood(PPLA2) 与 Greenwood Village(PPL) 只保留 PPLA2
+# 注意 key 含 admin2（县），不会误删不同县的真实同名镇（如 AL.001/AL.035 两个 Evergreen）
+dedupe_level2_by_name: true
+dedupe_level2_key: admin2_name
 self_level_fallback:
   city: false
   district: false

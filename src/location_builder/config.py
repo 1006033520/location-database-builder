@@ -28,6 +28,12 @@ class CountryConfig:
     # dict       -> per-level switch: {"city": bool, "district": bool}
     self_level_fallback: bool | dict = True
     dedupe_level2_by_name: bool = False
+    # "admin2"     -> dedupe by (admin1, admin2) only (JP: same city)
+    # "admin2_name" -> dedupe by (admin1, admin2, stripped name) (US)
+    dedupe_level2_key: str = "admin2_name"
+    # CN: drop level-3 ADM3 twins that duplicate a level-2 entry of the same
+    # province (GeoNames double records with broken admin2).
+    dedupe_cross_level: bool = False
     parent_resolution: list[str] = field(default_factory=lambda: ["hierarchy", "admin_code"])
 
     @property

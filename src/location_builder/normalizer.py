@@ -3,6 +3,7 @@ construction, municipality virtual nodes, missing-level self fallback, stable ID
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field
 
 from .config import CountryConfig
@@ -23,6 +24,30 @@ _FEATURE_WEIGHT = {
     "ADM4": 10**4,
     "ADM5": 10**3,
 }
+
+# Administrative-entity priority used when deduplicating level-2 duplicates:
+# a real ADM2 must win over a PPLA2/PPL twin of the same city (e.g. JP
+# "Atsugi Shi" ADM2 vs "Atsugi" PPLA2), and a PPLA2 must win over a PPL.
+_ADMIN_WEIGHT = {
+    "ADM1": 6,
+    "ADM2": 5,
+    "ADM3": 4,
+    "PPLA": 3,
+    "PPLA2": 3,
+    "PPLC": 3,
+    "PPL": 2,
+    "PPLX": 1,
+    "ADM4": 1,
+    "ADM5": 1,
+}
+
+# Admin suffixes stripped (only with a separator, so "Akashi" is never mangled)
+# when matching duplicate names in "admin2_name" dedupe mode (US).
+_SUFFIX_RE = re.compile(r"[-_ ](city|town|village|cdp|borough|county|municipality|shi|ku|gun|machi|cho|mura|son)$", re.IGNORECASE)
+
+
+def _strip_admin_suffix(name: str) -> str:
+    return _SUFFIX_RE.sub("", name.strip()).strip().casefold()
 
 
 def virtual_id(country_code: str, level: int, parent_id: int, geoname_id: int) -> int:
@@ -102,10 +127,16 @@ class Normalizer:
                 by_geoname[u.geoname_id] = node
         nodes = list(by_geoname.values())
 
-        # 2. JP-style dedupe of duplicated level-2 entities (ADM2 vs PPLA2)
+        # 2. JP/US-style dedupe of duplicated level-2 entities (ADM2 vs PPLA2,
+        #    PPLA2 vs PPL)
         if cfg.dedupe_level2_by_name:
             nodes = self._dedupe_level2(nodes)
         by_geoname = {n.geoname_id: n for n in nodes}
+
+        # 2b. CN-style cross-level twins (prefecture as ADM3 duplicating ADM2)
+        if cfg.dedupe_cross_level:
+            nodes = self._drop_cross_level_dups(nodes)
+            by_geoname = {n.geoname_id: n for n in nodes}
 
         # 3. country root (level 0)
         root = self._make_root(units)
@@ -173,15 +204,25 @@ class Normalizer:
         if u.feature_code in cfg.province:
             return 1
         if u.feature_code in cfg.city:
-            # CN municipalities: districts under 北京/上海/天津/重庆 are ADM2 -> level3
             if cfg.municipalities and u.admin1 in cfg.municipalities and u.feature_code == "ADM2":
-                return 3
+                # 直辖市整体 ADM2（如北京市 11876380）与省级节点重复，直接剔除；
+                # 其下 ADM3 区县仍会通过 muni_twins 挂到虚拟市级节点。
+                return None
             return 2
         if u.feature_code in cfg.district:
             return 3
         return None
 
     def _dedupe_level2(self, nodes: list[Node]) -> list[Node]:
+        """Level-2 duplicate removal.
+
+        - mode "admin2" (JP): same (admin1, admin2) is the same city; keep the
+          entity with the highest administrative weight (ADM2 > PPLA2), so the
+          "Atsugi Shi" ADM2 twin wins over the "Atsugi" PPLA2 twin.
+        - mode "admin2_name" (US): same (admin1, admin2, suffix-stripped name)
+          within a county is the same town; keep the PPLA2 over the PPL.
+        """
+        mode = getattr(self.cfg, "dedupe_level2_key", "admin2_name")
         best: dict[tuple, Node] = {}
         out: list[Node] = []
         for n in nodes:
@@ -189,15 +230,45 @@ class Normalizer:
                 out.append(n)
                 continue
             su = n.source_unit
-            key = ((su.admin1 if su else ""), n.default_name.casefold())
+            a1 = su.admin1 if su else ""
+            a2 = su.admin2 if su else ""
+            if mode == "admin2":
+                key = (a1, a2)
+            else:
+                key = (a1, a2, _strip_admin_suffix(n.default_name))
             prev = best.get(key)
             if prev is None:
                 best[key] = n
             else:
-                keep = prev if _FEATURE_WEIGHT.get(prev.source_feature_code, 0) >= _FEATURE_WEIGHT.get(n.source_feature_code, 0) else n
-                best[key] = keep
+                w_prev = _ADMIN_WEIGHT.get(prev.source_feature_code, 0)
+                w_new = _ADMIN_WEIGHT.get(n.source_feature_code, 0)
+                if w_new > w_prev or (w_new == w_prev and n.population > prev.population):
+                    best[key] = n
         best_ids = {n.id for n in best.values()}
         out.extend(n for n in nodes if n.id in best_ids)
+        return out
+
+    def _drop_cross_level_dups(self, nodes: list[Node]) -> list[Node]:
+        """CN: GeoNames sometimes stores a prefecture-level city twice — once as
+        ADM2 (kept at level 2) and once as ADM3 with a broken/self admin2 that
+        cannot attach to any level-2 unit (Yiyang Shi, Changde Shi, Lingshui
+        County, ...). Those level-3 twins would otherwise hang directly off the
+        province and duplicate the level-2 entry. Drop them.
+        """
+        l2_names: dict[str, set[str]] = {}
+        l2_keys: set[tuple] = set()
+        for n in nodes:
+            su = n.source_unit
+            if n.level == 2 and su is not None:
+                l2_names.setdefault(su.admin1, set()).add(_strip_admin_suffix(n.default_name))
+                l2_keys.add((su.admin1, su.admin2))
+        out: list[Node] = []
+        for n in nodes:
+            su = n.source_unit
+            if n.level == 3 and su is not None and su.feature_code == "ADM3":
+                if (su.admin1, su.admin2) not in l2_keys and _strip_admin_suffix(n.default_name) in l2_names.get(su.admin1, set()):
+                    continue
+            out.append(n)
         return out
 
     def _make_root(self, units: list[Unit]) -> Node:

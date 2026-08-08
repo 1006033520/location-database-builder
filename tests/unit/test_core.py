@@ -148,9 +148,10 @@ class TestNormalizerRules(unittest.TestCase):
     def test_cn_municipality_assigns_district_level(self):
         cfg = self._cfg("CN")
         norm = Normalizer(cfg, CountryInfo("CN", "CHN", "China", "Beijing", 0, ["zh-CN"], 1814991))
-        # ADM2 under municipality (admin1=22 Beijing) -> level 3
+        # ADM2 under municipality (admin1=22 Beijing) duplicates the province
+        # level (北京市整体) and is dropped entirely.
         u = Unit(1, "Chaoyang", 0, 0, "A", "ADM2", "CN", admin1="22", admin2="1101")
-        self.assertEqual(norm._assign_level(u), 3)
+        self.assertIsNone(norm._assign_level(u))
         # ADM2 under normal province -> level 2
         u2 = Unit(2, "Hefei", 0, 0, "A", "ADM2", "CN", admin1="01", admin2="3401")
         self.assertEqual(norm._assign_level(u2), 2)
